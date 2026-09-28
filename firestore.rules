@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Security rules for Sfide Addio al Celibato.
+// Anyone with the app can read and write challenges. The rules enforce a valid shape and deny
+// deletions, so challenges can be edited but never lost.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOptionalTime(data, field) {
+      return data.get(field, null) == null || data.get(field, null) is int;
+    }
+
+    function isValidChallenge(data) {
+      return data.keys().hasAll(['title', 'details', 'category', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'details', 'category', 'status', 'createdAt', 'updatedAt', 'drawnAt', 'resolvedAt'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 80
+        && data.details is string && data.details.size() <= 500
+        && data.category in ['aereo', 'strada', 'pub']
+        && data.status in ['deck', 'drawn', 'passed', 'failed', 'discarded']
+        && data.createdAt is int
+        && data.updatedAt is int
+        && isOptionalTime(data, 'drawnAt')
+        && isOptionalTime(data, 'resolvedAt');
+    }
+
+    // The moves the app makes. Queued offline writes are checked against the server state, so a
+    // stale write (for example a draw of a challenge another phone already marked) is rejected.
+    function isAllowedTransition(before, after) {
+      return before == after
+        || (before == 'deck' && after in ['drawn', 'discarded'])
+        || (before in ['drawn', 'passed', 'failed'] && after in ['passed', 'failed'])
+        || (before in ['drawn', 'discarded'] && after == 'deck');
+    }
+
+    match /challenges/{challengeId} {
+      allow read: if true;
+      allow create: if isValidChallenge(request.resource.data)
+        && request.resource.data.status == 'deck';
+      allow update: if isValidChallenge(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isAllowedTransition(resource.data.status, request.resource.data.status);
+      allow delete: if false;
+    }
+
+    match /meta/{docId} {
+      allow read: if true;
+      allow create: if docId == 'seed'
+        && request.resource.data.keys().hasOnly(['seededAt'])
+        && request.resource.data.seededAt is int;
+      allow update, delete: if false;
+    }
+  }
+}

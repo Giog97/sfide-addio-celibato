@@ -1,0 +1,14 @@
+{
+  "name": "sfide-addio-celibato",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile web app to draw and track bachelor party challenges, synced with Firestore.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

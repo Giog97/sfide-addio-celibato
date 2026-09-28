@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f2ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15121c" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Estrai a sorte le sfide dell'addio al celibato e segna quelle superate, insieme a tutto il gruppo.">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://www.gstatic.com/firebasejs/; object-src 'none'; base-uri 'none'">
+  <title>Sfide Addio al Celibato</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Sfide">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body data-loading>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <h1 class="brand">
+        <span class="brand-kicker">Le sfide</span>
+        <span class="brand-name">Addio al celibato</span>
+      </h1>
+      <p class="sync" id="sync-status" data-state="connecting">
+        <span class="sync-dot" aria-hidden="true"></span>
+        <span id="sync-label">Connessione...</span>
+      </p>
+    </div>
+  </header>
+
+  <div class="banners" id="banners"></div>
+
+  <main class="app-main">
+    <div class="view" id="view-home" data-view="home">
+      <section aria-labelledby="stats-title">
+        <h2 class="visually-hidden" id="stats-title">Riepilogo</h2>
+        <dl class="stats">
+          <div class="stat" data-kind="passed"><dt>Superate</dt><dd id="stat-passed">0</dd></div>
+          <div class="stat" data-kind="failed"><dt>Non superate</dt><dd id="stat-failed">0</dd></div>
+          <div class="stat" data-kind="pending"><dt>Da marcare</dt><dd id="stat-pending">0</dd></div>
+          <div class="stat" data-kind="deck"><dt>Nel mazzo</dt><dd id="stat-deck">0</dd></div>
+        </dl>
+      </section>
+
+      <section class="where" aria-labelledby="where-title">
+        <form id="category-form">
+          <fieldset>
+            <legend class="section-title" id="where-title">Dove siete?</legend>
+            <div class="tiles" id="category-tiles"></div>
+          </fieldset>
+        </form>
+        <div class="draw" id="draw-area" hidden>
+          <button type="button" class="btn btn-draw" id="draw-button">
+            <span data-icon="dice"></span>
+            <span class="btn-draw-text">
+              <span class="btn-draw-label">Estrai una sfida</span>
+              <span class="btn-draw-sub" id="draw-sub"></span>
+            </span>
+          </button>
+          <div class="empty-deck" id="empty-deck" hidden>
+            <p>Il mazzo <strong id="empty-deck-name"></strong> è vuoto.</p>
+            <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi una sfida</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi sfida</button>
+        <a class="btn btn-secondary" href="#/mazzo"><span data-icon="cards"></span>Mazzo</a>
+      </div>
+
+      <section aria-labelledby="history-title">
+        <div class="section-head">
+          <h2 class="section-title" id="history-title">Storico</h2>
+          <span class="section-count" id="history-count"></span>
+        </div>
+        <ol class="list" id="history-list"></ol>
+        <p class="empty history-empty" id="history-empty">Ancora nessuna sfida estratta: scegli dove siete e pesca la prima.</p>
+      </section>
+    </div>
+
+    <div class="view" id="view-deck" data-view="deck" hidden>
+      <a class="back-link" href="#/"><span data-icon="back"></span>Torna alle sfide</a>
+      <div class="view-head">
+        <h2 class="view-title" id="deck-title" tabindex="-1">Il mazzo</h2>
+        <p class="view-lead">Tutte le sfide, anche quelle non ancora estratte. Tocca una sfida per modificarla.</p>
+      </div>
+      <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi sfida</button>
+      <div class="deck-groups" id="deck-groups"></div>
+      <details class="discarded" id="discarded" hidden>
+        <summary>Scartate (<span id="discarded-count">0</span>)</summary>
+        <ul class="list" id="discarded-list"></ul>
+      </details>
+    </div>
+  </main>
+
+  <dialog class="sheet" id="challenge-dialog" aria-labelledby="challenge-title" closedby="any">
+    <article class="challenge-card" id="challenge-card">
+      <div class="challenge-meta" id="challenge-meta"></div>
+      <h2 class="challenge-title" id="challenge-title" tabindex="-1" autofocus></h2>
+      <p class="challenge-text" id="challenge-text"></p>
+      <p class="challenge-needs" id="challenge-needs" hidden>
+        <span data-icon="bag"></span>
+        <span><strong>Serve:</strong> <span id="challenge-needs-text"></span></span>
+      </p>
+    </article>
+    <form method="dialog" class="sheet-actions" id="challenge-actions">
+      <div class="result-row" id="result-row">
+        <button class="btn btn-pass" value="passed"><span data-icon="check"></span>Superata</button>
+        <button class="btn btn-fail" value="failed"><span data-icon="x"></span>Non superata</button>
+      </div>
+      <button class="btn btn-ghost" value="putback" id="putback-button"><span data-icon="undo"></span>Rimetti nel mazzo</button>
+      <button class="btn btn-ghost" value="close" id="close-challenge-button">Decidi dopo</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="form-dialog" aria-labelledby="form-title">
+    <form id="challenge-form" novalidate>
+      <h2 class="sheet-title" id="form-title">Nuova sfida</h2>
+      <div class="field">
+        <label for="field-title">Titolo <span class="required" aria-hidden="true">*</span></label>
+        <input id="field-title" name="title" type="text" required maxlength="80" autocomplete="off" enterkeyhint="next" aria-describedby="error-title">
+        <p class="field-error" id="error-title" hidden></p>
+      </div>
+      <div class="field">
+        <label for="field-details">Descrizione</label>
+        <textarea id="field-details" name="details" maxlength="500" rows="4" autocomplete="off" aria-describedby="hint-details error-details"></textarea>
+        <p class="field-hint" id="hint-details">Facoltativa. Per l'occorrente aggiungi in fondo «Serve: ...».</p>
+        <p class="field-error" id="error-details" hidden></p>
+      </div>
+      <fieldset class="field" aria-describedby="error-category">
+        <legend>Categoria <span class="required" aria-hidden="true">*</span></legend>
+        <div class="segmented" id="form-categories"></div>
+        <p class="field-error" id="error-category" hidden></p>
+      </fieldset>
+      <div class="sheet-actions">
+        <button type="submit" class="btn btn-primary" id="form-submit">Aggiungi al mazzo</button>
+        <button type="button" class="btn btn-ghost" id="form-discard" hidden><span data-icon="archive"></span>Scarta</button>
+        <button type="button" class="btn btn-ghost" id="form-restore" hidden><span data-icon="undo"></span>Rimetti nel mazzo</button>
+        <button type="button" class="btn btn-ghost" id="form-cancel">Annulla</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="spoiler-dialog" aria-labelledby="spoiler-title" closedby="any">
+    <form method="dialog">
+      <h2 class="sheet-title" id="spoiler-title">Attenzione, spoiler!</h2>
+      <p class="sheet-text">Il mazzo mostra tutte le sfide, anche quelle non ancora estratte. Se sei lo sposo, chiudi subito.</p>
+      <div class="sheet-actions">
+        <button class="btn btn-primary" value="enter">Apri il mazzo</button>
+        <button class="btn btn-ghost" value="cancel" autofocus>Annulla</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" popover="manual"></div>
+  <p class="visually-hidden" id="announcer" aria-live="polite"></p>
+</body>
+</html>
