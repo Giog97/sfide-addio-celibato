@@ -79,6 +79,15 @@ export function historyOf(challenges) {
     .sort((a, b) => (b.drawnAt ?? 0) - (a.drawnAt ?? 0) || b.updatedAt - a.updatedAt);
 }
 
+/** History page model: challenges still to mark, then the marked ones, each most recent draw first. */
+export function historyGroups(challenges) {
+  const history = historyOf(challenges);
+  return {
+    pending: history.filter((c) => c.status === STATUS.DRAWN),
+    marked: history.filter((c) => c.status !== STATUS.DRAWN),
+  };
+}
+
 export function statsOf(challenges) {
   const stats = { passed: 0, failed: 0, pending: 0, deck: 0, deckByCategory: {} };
   for (const id of CATEGORY_IDS) stats.deckByCategory[id] = 0;
@@ -157,8 +166,9 @@ export function resolvePatch(challenge, result, now) {
   return { status: result, resolvedAt: now, updatedAt: now };
 }
 
+/** Returns a drawn or marked challenge to the deck; a result, if any, is erased. */
 export function putBackPatch(challenge, now) {
-  assertStatus(challenge, [STATUS.DRAWN], 'put back');
+  assertStatus(challenge, RESOLVABLE_STATUSES, 'put back');
   return { status: STATUS.DECK, drawnAt: null, resolvedAt: null, updatedAt: now };
 }
 

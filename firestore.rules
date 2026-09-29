@@ -1,8 +1,9 @@
 rules_version = '2';
 
 // Security rules for Sfide Addio al Celibato.
-// Anyone with the app can read and write challenges. The rules enforce a valid shape and deny
-// deletions, so challenges can be edited but never lost.
+// There is no login: anyone with the app can read and write challenges. The rules enforce a valid
+// shape and the status changes the app makes, and deny deletions. They cannot stop someone with
+// the link from rewriting texts or erasing results.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -23,13 +24,13 @@ service cloud.firestore {
         && isOptionalTime(data, 'resolvedAt');
     }
 
-    // The moves the app makes. Queued offline writes are checked against the server state, so a
-    // stale write (for example a draw of a challenge another phone already marked) is rejected.
+    // The moves the app makes. Queued offline writes are checked against the server state, so some
+    // stale writes are rejected: for example the draw of a challenge that another phone has marked.
     function isAllowedTransition(before, after) {
       return before == after
         || (before == 'deck' && after in ['drawn', 'discarded'])
         || (before in ['drawn', 'passed', 'failed'] && after in ['passed', 'failed'])
-        || (before in ['drawn', 'discarded'] && after == 'deck');
+        || (before in ['drawn', 'passed', 'failed', 'discarded'] && after == 'deck');
     }
 
     match /challenges/{challengeId} {

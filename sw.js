@@ -4,9 +4,21 @@
 // Every GitHub Pages site of an account shares one origin, hence one Cache Storage:
 // the prefix keeps this app away from the caches of the others.
 const CACHE_PREFIX = 'sfide-addio-celibato-';
-const CACHE = `${CACHE_PREFIX}v1`;
+const CACHE = `${CACHE_PREFIX}v2`;
 const FIREBASE_SDK_PREFIX = 'https://www.gstatic.com/firebasejs/';
 const FIREBASE_SDK = [`${FIREBASE_SDK_PREFIX}12.19.0/firebase-app.js`, `${FIREBASE_SDK_PREFIX}12.19.0/firebase-firestore.js`];
+const FONTS = [
+  'https://fonts.googleapis.com/css2?family=Diphylleia&display=swap',
+  'https://fonts.cdnfonts.com/s/39082/BrittanySignature-LjyZ.woff',
+];
+// Cross-origin files that never change for a given URL: the Firebase SDK and the fonts.
+// The font files listed in the Google stylesheet depend on the browser, so they are cached on first use.
+const CACHE_FIRST_PREFIXES = [
+  FIREBASE_SDK_PREFIX,
+  'https://fonts.googleapis.com/',
+  'https://fonts.gstatic.com/',
+  'https://fonts.cdnfonts.com/',
+];
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,6 +26,7 @@ const APP_SHELL = [
   './css/styles.css',
   './js/app.js',
   './js/icons.js',
+  './js/leaves.js',
   './js/logic.js',
   './js/seed.js',
   './js/store/index.js',
@@ -25,9 +38,12 @@ const APP_SHELL = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './img/card-aereo.jpg',
+  './img/card-strada.jpg',
+  './img/card-pub.jpg',
 ];
 // Cached one by one: a file that is missing or unreachable during install never makes it fail.
-const OPTIONAL = ['./js/firebase-config.js', ...FIREBASE_SDK];
+const OPTIONAL = ['./js/firebase-config.js', ...FIREBASE_SDK, ...FONTS];
 const NETWORK_TIMEOUT_MS = 3000;
 
 // Pages that had to come from the cache get their other files from the cache as well,
@@ -81,7 +97,7 @@ self.addEventListener('fetch', (event) => {
       if (request.mode === 'navigate' && event.resultingClientId) offlineClients.add(event.resultingClientId);
     };
     event.respondWith(networkFirst(request, fetched, markOffline));
-  } else if (url.href.startsWith(FIREBASE_SDK_PREFIX)) {
+  } else if (CACHE_FIRST_PREFIXES.some((prefix) => url.href.startsWith(prefix))) {
     event.respondWith(cacheFirst(request));
   }
 });

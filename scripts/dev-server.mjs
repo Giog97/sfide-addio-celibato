@@ -1,4 +1,5 @@
-// Minimal static server for local testing: node scripts/dev-server.mjs [port]
+// Minimal static server for local testing: node scripts/dev-server.mjs [port] [--local]
+// --local serves a placeholder Firebase config, so tests run in local mode and never touch Firestore.
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -6,7 +7,10 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const PORT = Number(process.argv[2] ?? process.env.PORT ?? 8080);
+const args = process.argv.slice(2);
+const PORT = Number(args.find((arg) => /^\d+$/.test(arg)) ?? process.env.PORT ?? 8080);
+const LOCAL_MODE = args.includes('--local');
+const PLACEHOLDER_CONFIG = "export const firebaseConfig = { apiKey: '<FIREBASE_API_KEY>' };\n";
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -16,6 +20,9 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
 };
@@ -27,6 +34,10 @@ function notFound(response) {
 const server = createServer(async (request, response) => {
   try {
     const { pathname } = new URL(request.url, 'http://127.0.0.1');
+    if (LOCAL_MODE && pathname === '/js/firebase-config.js') {
+      response.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store' }).end(PLACEHOLDER_CONFIG);
+      return;
+    }
     const segments = decodeURIComponent(pathname).split('/');
     if (segments.some((segment) => segment.startsWith('.'))) return notFound(response);
     let path = normalize(join(ROOT, ...segments));
@@ -44,5 +55,5 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Serving ${ROOT} at http://127.0.0.1:${PORT}`);
+  console.log(`Serving ${ROOT} at http://127.0.0.1:${PORT}${LOCAL_MODE ? ' (local mode: Firestore disabled)' : ''}`);
 });

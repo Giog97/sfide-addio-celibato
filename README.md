@@ -6,10 +6,11 @@ The interface is in Italian.
 
 ## Features
 
-- Three categories: Aereo, In strada, Pub.
-- Random draw from the selected category. A drawn challenge never comes out again, unless someone puts it back in the deck.
-- History of the drawn challenges with their result: passed, failed or still to mark.
+- Three categories with a photo each: Aereo, In strada, Pub.
+- Random draw from the selected category. A drawn challenge never comes out again, unless someone puts it back in the deck, even after it was marked. Putting back a marked challenge erases its result, so it asks for a second tap.
+- A bottom bar with Estrai, Storico, Aggiungi and Mazzo. The Storico page lists the challenges still to mark and the marked ones.
 - Anyone can add challenges. The deck page, behind a spoiler warning, lets organizers edit and discard them.
+- Autumn look after the wedding site: Diphylleia and Brittany Signature fonts, falling leaves, a burst of leaves on "Superata".
 - Installable on Android and iPhone; works offline and syncs when the connection returns.
 - While `js/firebase-config.js` holds placeholders, the app runs in local mode: data stays on one device.
 
@@ -20,6 +21,7 @@ The interface is in Italian.
 | `index.html`, `css/`, `js/` | the app: plain ES modules, no build step |
 | `js/firebase-config.js` | Firebase web config: paste your project's values here |
 | `js/seed.js` | the 20 default challenges |
+| `img/card-*.jpg` | the photos of the three places |
 | `js/store/` | data stores: Firestore and localStorage |
 | `sw.js`, `manifest.webmanifest`, `icons/` | offline support and installation |
 | `firestore.rules` | security rules for the Firebase console |
@@ -33,10 +35,10 @@ Requires Node.js 22 or later.
 
 ```bash
 npm test
-npm run dev
+npm run dev:local
 ```
 
-Open http://127.0.0.1:8080. With placeholders in `js/firebase-config.js` the app runs in local mode; with your values it uses your Firestore database.
+Open http://127.0.0.1:8080. `npm run dev:local` serves a placeholder Firebase config, so the app runs in local mode and tests never touch the shared challenges. `npm run dev` uses `js/firebase-config.js` as it is, hence the real Firestore database once your values are there.
 
 ## Setup
 
@@ -45,7 +47,7 @@ Open http://127.0.0.1:8080. With placeholders in `js/firebase-config.js` the app
 1. In the Firebase console (https://console.firebase.google.com) create a project. Google Analytics is not needed.
 2. Add a Web app to the project. Firebase Hosting is not needed.
 3. Create a Cloud Firestore database: Standard edition if asked, production mode, a European location.
-4. In the database Rules tab, replace the content with `firestore.rules` from this repository and publish.
+4. In the database Rules tab, replace the content with `firestore.rules` from this repository and publish. Publish it again whenever `firestore.rules` changes: for example, putting a marked challenge back in the deck needs the version of 2026-09-29.
 
 The free Spark plan is enough: it includes 50,000 reads and 20,000 writes per day.
 
@@ -82,19 +84,22 @@ Before the flight, every phone must open the app from its home-screen icon while
 2. Draw a challenge on the first phone: within seconds it appears in the history of the second.
 3. Turn on airplane mode on the first phone and mark the challenge: the indicator shows "In attesa di sync".
 4. Turn airplane mode off: the result reaches the second phone.
+5. Open the marked challenge from Storico and put it back in the deck (two taps): no "Modifica rifiutata" message appears. If it does, the Firebase console still has an older version of `firestore.rules`.
 
 ## Security notes
 
 - There is no login: anyone with the link can use the app. Share the link only with the group.
-- The Firestore rules accept only well-formed challenges and the status changes the app makes, and they deny deletions: nobody can delete data. Anyone with the link can still add junk challenges, overwrite texts (there is no history), or use up the daily free quota of 20,000 writes.
+- The Firestore rules accept only well-formed challenges and the status changes the app makes, and they deny deletions: nobody can delete a challenge. Anyone with the link can still add junk challenges, overwrite texts (there is no history), erase a result by putting the challenge back in the deck, or use up the daily free quota of 20,000 writes.
 - The Firebase config sits in the public repository. Firebase documents that API keys for Firebase services are not secrets and do not control access to data: only the Security Rules protect it. Firebase also recommends restricting the key to the Firebase APIs it needs (Google Cloud Console > APIs & Services > Credentials).
 - The repository is public, so anyone can read the default challenges in `js/seed.js` and in the design notes under `docs/specs/`. Keep it in mind if the groom might look.
 
 ## Customizing
 
 - Default challenges: edit `js/seed.js` before the first launch with Firebase. After that, change challenges from the deck page.
+- Photos: replace `img/card-aereo.jpg`, `img/card-strada.jpg` or `img/card-pub.jpg` with a landscape JPEG of the same name, about 1200 px wide and under 300 KB. Phones get the new photo the next time they open the app online. The original photos in `img/` (`aereo.jpg`, `praga.jpg`, `pub.jpg`) are not used by the app.
+- Fonts: Diphylleia comes from Google Fonts (SIL Open Font License), Brittany Signature from the cdnfonts CDN, as on the wedding site; the service worker keeps both for offline use.
 - App name: `index.html` (title and header) and `manifest.webmanifest`.
-- After changing the file list in `sw.js`, bump the version in `CACHE`.
+- After adding or removing files in the `APP_SHELL` list of `sw.js`, bump the version in `CACHE`, so that the old cache is deleted.
 
 ## Troubleshooting
 
@@ -104,5 +109,5 @@ Before the flight, every phone must open the app from its home-screen icon while
 | Banner "Firestore ha negato l'accesso" | check the values in `js/firebase-config.js` and publish `firestore.rules` in the Firebase console |
 | Banner "Database Firestore non trovato" | create the Firestore database (Firebase step 3) |
 | Indicator stuck on "Connessione..." | the phone cannot reach Firestore: check the connection |
-| Toast "Modifica rifiutata" | another phone changed that challenge first (for example while this one was offline): the app shows the current state |
+| Toast "Modifica rifiutata" | another phone changed that challenge first (for example while this one was offline): the app shows the current state. If it happens on every "Rimetti nel mazzo", publish the latest `firestore.rules` |
 | A push does not show up on the site | wait a couple of minutes for GitHub Pages, then reload the app |

@@ -9,6 +9,7 @@ import {
   discardPatch,
   drawPatch,
   editPatch,
+  historyGroups,
   historyOf,
   isResolvable,
   newChallenge,
@@ -230,14 +231,30 @@ test('isResolvable is true only for drawn, passed and failed', () => {
   );
 });
 
-test('putBackPatch returns a drawn challenge to the deck', () => {
-  assert.deepEqual(putBackPatch(challenge({ status: STATUS.DRAWN, drawnAt: NOW }), NOW + 1), {
-    status: STATUS.DECK,
-    drawnAt: null,
-    resolvedAt: null,
-    updatedAt: NOW + 1,
-  });
-  assert.throws(() => putBackPatch(challenge({ status: STATUS.PASSED }), NOW));
+test('putBackPatch returns drawn and already marked challenges to the deck', () => {
+  for (const status of [STATUS.DRAWN, STATUS.PASSED, STATUS.FAILED]) {
+    assert.deepEqual(putBackPatch(challenge({ status, drawnAt: NOW, resolvedAt: NOW }), NOW + 1), {
+      status: STATUS.DECK,
+      drawnAt: null,
+      resolvedAt: null,
+      updatedAt: NOW + 1,
+    });
+  }
+  assert.throws(() => putBackPatch(challenge({ status: STATUS.DECK }), NOW));
+  assert.throws(() => putBackPatch(challenge({ status: STATUS.DISCARDED }), NOW));
+});
+
+test('historyGroups splits challenges to mark from marked ones, most recent first', () => {
+  const list = [
+    challenge({ id: 'old-pass', status: STATUS.PASSED, drawnAt: NOW + 1 }),
+    challenge({ id: 'new-draw', status: STATUS.DRAWN, drawnAt: NOW + 4 }),
+    challenge({ id: 'deck', status: STATUS.DECK }),
+    challenge({ id: 'old-draw', status: STATUS.DRAWN, drawnAt: NOW + 2 }),
+    challenge({ id: 'new-fail', status: STATUS.FAILED, drawnAt: NOW + 3 }),
+  ];
+  const groups = historyGroups(list);
+  assert.deepEqual(groups.pending.map((c) => c.id), ['new-draw', 'old-draw']);
+  assert.deepEqual(groups.marked.map((c) => c.id), ['new-fail', 'old-pass']);
 });
 
 test('discardPatch and restorePatch only move between deck and discarded', () => {

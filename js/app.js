@@ -10,7 +10,7 @@ import {
   discardPatch,
   drawPatch,
   editPatch,
-  historyOf,
+  historyGroups,
   isResolvable,
   pickRandom,
   putBackPatch,
@@ -21,6 +21,7 @@ import {
   validateChallengeInput,
 } from './logic.js';
 import { icon } from './icons.js';
+import { burstLeaves, startLeaves } from './leaves.js';
 import { openStore } from './store/index.js';
 
 const CATEGORY_ICONS = { aereo: 'plane', strada: 'signpost', pub: 'beer' };
@@ -35,6 +36,10 @@ const SYNC_LABELS = {
 };
 const FIELD_ERROR_IDS = { title: 'error-title', details: 'error-details', category: 'error-category' };
 const DRAW_DELAY_MS = 450;
+const SHAKE_MS = 450;
+// Taps on the sheet this soon after it opens were aimed at the button under it.
+const SHEET_GUARD_MS = 400;
+const PUTBACK_CONFIRM_MS = 4000;
 const TOAST_MS = 3200;
 const IOS_HINT_KEY = 'sfide-addio-celibato:ios-hint-dismissed';
 const INSTALL_DISMISSED_KEY = 'sfide-addio-celibato:install-dismissed';
@@ -43,8 +48,11 @@ const supportsPopover = 'popover' in HTMLElement.prototype;
 const state = {
   challenges: [],
   sync: { state: 'connecting' },
+  // The page shown, or about to be shown when a view transition is running.
+  view: 'home',
   selectedCategory: null,
   openChallengeId: null,
+  sheetOpenedAt: 0,
   editingId: null,
   deckUnlocked: false,
   drawing: false,
@@ -53,16 +61,21 @@ const state = {
 let store = null;
 let deferredInstallPrompt = null;
 let toastTimer = 0;
+let shakeTimer = 0;
+let putBackTimer = 0;
 
 const byId = (id) => document.getElementById(id);
 
 const els = {
+  leaves: byId('leaves'),
+  burst: byId('burst'),
   syncStatus: byId('sync-status'),
   syncLabel: byId('sync-label'),
   banners: byId('banners'),
   views: document.querySelectorAll('[data-view]'),
-  deckView: byId('view-deck'),
-  deckTitle: byId('deck-title'),
+  viewTitles: { home: byId('home-title'), history: byId('history-title'), deck: byId('deck-title') },
+  tabs: document.querySelectorAll('[data-tab]'),
+  historyBadge: byId('history-badge'),
   stats: {
     passed: byId('stat-passed'),
     failed: byId('stat-failed'),
@@ -75,9 +88,15 @@ const els = {
   drawSub: byId('draw-sub'),
   emptyDeck: byId('empty-deck'),
   emptyDeckName: byId('empty-deck-name'),
-  historyList: byId('history-list'),
+  historyView: byId('view-history'),
+  pendingSection: byId('pending-section'),
+  pendingCount: byId('pending-count'),
+  pendingList: byId('pending-list'),
+  markedSection: byId('marked-section'),
+  markedCount: byId('marked-count'),
+  markedList: byId('marked-list'),
   historyEmpty: byId('history-empty'),
-  historyCount: byId('history-count'),
+  deckView: byId('view-deck'),
   deckGroups: byId('deck-groups'),
   discarded: byId('discarded'),
   discardedCount: byId('discarded-count'),
@@ -92,7 +111,9 @@ const els = {
   challengeActions: byId('challenge-actions'),
   resultRow: byId('result-row'),
   putBackButton: byId('putback-button'),
+  putBackLabel: byId('putback-label'),
   closeChallengeButton: byId('close-challenge-button'),
+  sheetAnnouncer: byId('sheet-announcer'),
   formDialog: byId('form-dialog'),
   form: byId('challenge-form'),
   formTitle: byId('form-title'),
@@ -102,6 +123,7 @@ const els = {
   formRestore: byId('form-restore'),
   formCancel: byId('form-cancel'),
   spoilerDialog: byId('spoiler-dialog'),
+  spoilerForm: byId('spoiler-form'),
   toast: byId('toast'),
   announcer: byId('announcer'),
 };
@@ -123,6 +145,7 @@ function h(tag, attributes = {}, ...children) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const vibrate = (pattern) => navigator.vibrate?.(pattern);
 
 function findChallenge(id) {
   return state.challenges.find((c) => c.id === id) ?? null;
@@ -135,7 +158,7 @@ function remainingLabel(count) {
 
 function categoryChip(categoryId) {
   const label = categoryById(categoryId)?.label ?? categoryId;
-  return h('span', { className: 'chip', dataset: { category: categoryId } }, icon(CATEGORY_ICONS[categoryId] ?? 'cards'), label);
+  return h('span', { className: 'chip' }, icon(CATEGORY_ICONS[categoryId] ?? 'cards'), label);
 }
 
 function statusBadge(status) {
@@ -158,8 +181,8 @@ function challengeRow(challenge, action) {
     {},
     h(
       'button',
-      { type: 'button', className: 'row', dataset: { [action]: challenge.id, category: challenge.category, status: challenge.status } },
-      h('span', { className: 'row-icon' }, icon(CATEGORY_ICONS[challenge.category] ?? 'cards')),
+      { type: 'button', className: 'row', 'aria-haspopup': 'dialog', dataset: { [action]: challenge.id, status: challenge.status } },
+      h('span', { className: 'row-thumb', dataset: { category: challenge.category }, 'aria-hidden': 'true' }),
       h('span', { className: 'visually-hidden' }, `${label}: `),
       h('span', { className: 'row-title' }, challenge.title),
       ' ',
@@ -179,12 +202,18 @@ function buildCategoryControls() {
     ...CATEGORIES.map((category) =>
       h(
         'label',
-        { className: 'tile', dataset: { category: category.id } },
+        { className: 'place', dataset: { category: category.id } },
         h('input', { type: 'radio', name: 'category', value: category.id, className: 'visually-hidden' }),
-        h('span', { className: 'tile-icon' }, icon(CATEGORY_ICONS[category.id])),
-        h('span', { className: 'tile-name' }, category.label),
+        h(
+          'span',
+          { className: 'place-body' },
+          h('span', { className: 'place-name' }, category.label),
+          ' ',
+          h('span', { className: 'place-hint' }, category.hint),
+        ),
         ' ',
-        h('span', { className: 'tile-count', dataset: { countFor: category.id } }),
+        h('span', { className: 'place-count', dataset: { countFor: category.id } }),
+        h('span', { className: 'place-check', 'aria-hidden': 'true' }, icon('check')),
       ),
     ),
   );
@@ -194,7 +223,6 @@ function buildCategoryControls() {
         'label',
         { className: 'segment', dataset: { category: category.id } },
         h('input', { type: 'radio', name: 'category', value: category.id, required: true, className: 'visually-hidden' }),
-        icon(CATEGORY_ICONS[category.id]),
         category.label,
       ),
     ),
@@ -304,18 +332,24 @@ function renderDraw(stats) {
   els.drawArea.hidden = !category;
   if (!category) return;
   const remaining = stats.deckByCategory[category.id];
-  els.drawArea.dataset.category = category.id;
   els.drawButton.hidden = remaining === 0;
   els.emptyDeck.hidden = remaining > 0;
-  els.drawSub.textContent = `${category.hint} · ${remainingLabel(remaining).toLowerCase()}`;
+  els.drawSub.textContent = `${category.label} · ${remainingLabel(remaining).toLowerCase()}`;
   els.emptyDeckName.textContent = category.label;
 }
 
 function renderHistory() {
-  const history = historyOf(state.challenges);
-  els.historyEmpty.hidden = history.length > 0;
-  els.historyCount.textContent = history.length > 0 ? String(history.length) : '';
-  replaceRows(els.historyList, history.map((c) => challengeRow(c, 'open')));
+  const { pending, marked } = historyGroups(state.challenges);
+  els.historyBadge.hidden = pending.length === 0;
+  els.historyBadge.replaceChildren(String(pending.length), h('span', { className: 'visually-hidden' }, ' da marcare'));
+  if (els.historyView.hidden) return;
+  els.pendingSection.hidden = pending.length === 0;
+  els.markedSection.hidden = marked.length === 0;
+  els.historyEmpty.hidden = pending.length + marked.length > 0;
+  els.pendingCount.textContent = String(pending.length);
+  els.markedCount.textContent = String(marked.length);
+  replaceRows(els.pendingList, pending.map((c) => challengeRow(c, 'open')));
+  replaceRows(els.markedList, marked.map((c) => challengeRow(c, 'open')));
 }
 
 function renderDeck() {
@@ -325,11 +359,10 @@ function renderDeck() {
     groups.map(({ category, items }) =>
       h(
         'section',
-        { className: 'deck-group', dataset: { category: category.id }, 'aria-labelledby': `deck-${category.id}` },
+        { className: 'deck-group', 'aria-labelledby': `deck-${category.id}` },
         h(
           'h3',
           { className: 'deck-group-title', id: `deck-${category.id}` },
-          icon(CATEGORY_ICONS[category.id]),
           category.label,
           h('span', { className: 'section-count' }, String(items.length)),
         ),
@@ -392,13 +425,20 @@ function toast(message, tone = 'info') {
   } else {
     els.toast.classList.add('is-open');
   }
-  // Separate live region, so repeated messages are announced too.
-  els.announcer.textContent = '';
-  setTimeout(() => {
-    els.announcer.textContent = message;
-  }, 50);
+  announce(message);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, TOAST_MS);
+}
+
+/** Reads a message out through a live region; emptied first, so a repeated message is read again. */
+function announce(message) {
+  els.announcer.textContent = '';
+  els.sheetAnnouncer.textContent = '';
+  setTimeout(() => {
+    // An open modal sheet makes the rest of the page inert, live regions included: speak from inside it.
+    const region = els.challengeDialog.open ? els.sheetAnnouncer : els.announcer;
+    region.textContent = message;
+  }, 50);
 }
 
 function hideToast() {
@@ -410,10 +450,17 @@ function hideToast() {
 
 function openChallenge(id, { reveal = false } = {}) {
   if (!findChallenge(id)) return;
+  // A shake still running belongs to the previous challenge.
+  clearTimeout(shakeTimer);
+  els.challengeCard.classList.remove('is-shaking');
+  armPutBack(false);
   state.openChallengeId = id;
   renderChallengeSheet();
   els.challengeDialog.toggleAttribute('data-reveal', reveal);
-  if (!els.challengeDialog.open) els.challengeDialog.showModal();
+  if (!els.challengeDialog.open) {
+    els.challengeDialog.showModal();
+    state.sheetOpenedAt = performance.now();
+  }
 }
 
 function renderChallengeSheet() {
@@ -428,7 +475,7 @@ function renderChallengeSheet() {
   els.challengeNeedsText.textContent = needs;
   els.challengeNeeds.hidden = needs === '';
   els.resultRow.hidden = !isResolvable(challenge);
-  els.putBackButton.hidden = challenge.status !== STATUS.DRAWN;
+  els.putBackButton.hidden = !isResolvable(challenge);
   els.closeChallengeButton.textContent = challenge.status === STATUS.DRAWN ? 'Decidi dopo' : 'Chiudi';
 }
 
@@ -438,13 +485,53 @@ function onChallengeAction(event) {
   const action = event.submitter?.value;
   const challenge = findChallenge(state.openChallengeId);
   if (!challenge) return;
-  const now = Date.now();
-  if ((action === STATUS.PASSED || action === STATUS.FAILED) && isResolvable(challenge) && challenge.status !== action) {
-    const message = action === STATUS.PASSED ? 'Superata! Grande!' : 'Non superata: scatta la penitenza!';
-    applyPatch(challenge, resolvePatch(challenge, action, now), message);
-  } else if (action === 'putback' && challenge.status === STATUS.DRAWN) {
-    applyPatch(challenge, putBackPatch(challenge, now), 'Rimessa nel mazzo: potrà uscire di nuovo.');
+  if (performance.now() - state.sheetOpenedAt < SHEET_GUARD_MS) {
+    event.preventDefault();
+    return;
   }
+  const now = Date.now();
+  if (action === STATUS.PASSED && isResolvable(challenge) && challenge.status !== action) {
+    const origin = event.submitter.getBoundingClientRect();
+    applyPatch(challenge, resolvePatch(challenge, action, now), 'Superata! Grande!');
+    burstLeaves(origin.left + origin.width / 2, origin.top + origin.height / 2);
+    vibrate(40);
+  } else if (action === STATUS.FAILED && isResolvable(challenge) && challenge.status !== action) {
+    applyPatch(challenge, resolvePatch(challenge, action, now), 'Non superata: scatta la penitenza!');
+    vibrate([60, 50, 60]);
+    if (!prefersReducedMotion()) {
+      // Keep the sheet open for the shake, then close it.
+      event.preventDefault();
+      shakeThenClose(challenge.id);
+    }
+  } else if (action === 'putback' && isResolvable(challenge)) {
+    if (challenge.status !== STATUS.DRAWN && !els.putBackButton.hasAttribute('data-armed')) {
+      // Putting back a marked challenge erases its result: the first tap only asks for confirmation.
+      event.preventDefault();
+      armPutBack(true);
+      toast("Tocca di nuovo per rimetterla nel mazzo: l'esito verrà cancellato.");
+      return;
+    }
+    const message =
+      challenge.status === STATUS.DRAWN ? 'Rimessa nel mazzo: potrà uscire di nuovo.' : "Rimessa nel mazzo: l'esito è stato cancellato.";
+    applyPatch(challenge, putBackPatch(challenge, now), message);
+  }
+}
+
+function shakeThenClose(id) {
+  els.challengeCard.classList.add('is-shaking');
+  clearTimeout(shakeTimer);
+  shakeTimer = setTimeout(() => {
+    els.challengeCard.classList.remove('is-shaking');
+    if (state.openChallengeId === id && els.challengeDialog.open) els.challengeDialog.close();
+  }, SHAKE_MS);
+}
+
+/** Switches "Rimetti nel mazzo" to its confirmation state, which expires after a few seconds. */
+function armPutBack(armed) {
+  clearTimeout(putBackTimer);
+  els.putBackButton.toggleAttribute('data-armed', armed);
+  els.putBackLabel.textContent = armed ? "Sì, cancella l'esito" : 'Rimetti nel mazzo';
+  if (armed) putBackTimer = setTimeout(() => armPutBack(false), PUTBACK_CONFIRM_MS);
 }
 
 function onChallengeClosed() {
@@ -453,10 +540,21 @@ function onChallengeClosed() {
   const id = state.openChallengeId;
   state.openChallengeId = null;
   els.challengeDialog.removeAttribute('data-reveal');
-  // The row that opened the sheet may have been rebuilt meanwhile: focus its replacement.
-  if (id && document.activeElement === document.body) {
-    els.historyList.querySelector(`[data-open="${CSS.escape(id)}"]`)?.focus();
-  }
+  armPutBack(false);
+  restoreFocus(els.challengeDialog, id ? `[data-open="${CSS.escape(id)}"]` : null);
+}
+
+/**
+ * After a sheet closes, focuses the row it was opened from, or the page heading when that row is gone.
+ * The browser restores focus by itself, unless the element that had it has been rebuilt or hidden meanwhile.
+ */
+function restoreFocus(dialog, rowSelector) {
+  const active = document.activeElement;
+  if (active && active !== document.body && !dialog.contains(active)) return;
+  const row = rowSelector ? document.querySelector(`.view:not([hidden]) ${rowSelector}`) : null;
+  row?.focus();
+  // A row in the collapsed "Scartate" group cannot take focus.
+  if (document.activeElement !== row) els.viewTitles[state.view]?.focus();
 }
 
 function applyPatch(challenge, patch, message) {
@@ -478,6 +576,7 @@ async function onDraw() {
   const category = state.selectedCategory;
   if (state.drawing || !category || !store) return;
   state.drawing = true;
+  vibrate(30);
   els.drawButton.classList.add('is-rolling');
   await wait(prefersReducedMotion() ? 0 : DRAW_DELAY_MS);
   els.drawButton.classList.remove('is-rolling');
@@ -583,51 +682,103 @@ function onRestore() {
 
 // Routing
 
-function showView(name) {
-  const changing = [...els.views].some((view) => view.hidden === (view.dataset.view === name));
-  for (const view of els.views) view.hidden = view.dataset.view !== name;
-  if (!changing) return;
-  window.scrollTo(0, 0);
-  if (name === 'deck') {
-    renderDeck();
-    els.deckTitle.focus();
+function routeView() {
+  if (location.hash === '#/mazzo') return 'deck';
+  if (location.hash === '#/storico') return 'history';
+  return 'home';
+}
+
+function updateTabs(name) {
+  for (const tab of els.tabs) {
+    if (tab.dataset.tab === name) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
   }
 }
 
-function renderRoute() {
-  const wantsDeck = location.hash === '#/mazzo';
-  if (!wantsDeck) {
-    state.deckUnlocked = false;
-    // A back gesture can leave the deck route while the warning is still open.
-    if (els.spoilerDialog.open) els.spoilerDialog.close();
-  }
-  if (wantsDeck && !state.deckUnlocked) {
-    showView('home');
-    if (!els.spoilerDialog.open) {
-      els.spoilerDialog.returnValue = '';
-      els.spoilerDialog.showModal();
-    }
+/** Shows a page. `initial` is the first render: no animation, and focus stays where the browser puts it. */
+function showView(name, { initial = false } = {}) {
+  updateTabs(name);
+  if (state.view === name) return;
+  state.view = name;
+  // Applies the latest target: a newer navigation can start before this transition updates the page.
+  const update = () => {
+    for (const view of els.views) view.hidden = view.dataset.view !== state.view;
+    if (state.view === 'history') renderHistory();
+    if (state.view === 'deck') renderDeck();
+    window.scrollTo(0, 0);
+  };
+  // Move focus to the new page heading, as the page itself changes under the user.
+  const focusHeading = () => els.viewTitles[state.view]?.focus();
+  // A hidden page cannot run a transition: the browser would only abort it.
+  const animate =
+    !initial && document.startViewTransition && !prefersReducedMotion() && document.visibilityState === 'visible';
+  if (!animate) {
+    update();
+    if (!initial) focusHeading();
     return;
   }
-  showView(wantsDeck ? 'deck' : 'home');
+  const transition = document.startViewTransition(update);
+  // A newer navigation skips this transition; the page is updated anyway.
+  transition.ready.catch(() => {});
+  transition.updateCallbackDone.then(focusHeading, () => {});
 }
 
-function onSpoilerClosed() {
-  if (els.spoilerDialog.returnValue === 'enter') {
-    state.deckUnlocked = true;
-    renderRoute();
-  } else if (location.hash === '#/mazzo') {
-    history.replaceState(null, '', `${location.pathname}${location.search}`);
+function renderRoute({ initial = false } = {}) {
+  const view = routeView();
+  if (view !== 'deck') {
+    // The warning shows every time the deck is opened again.
+    state.deckUnlocked = false;
+    if (els.spoilerDialog.open) els.spoilerDialog.close();
+    // A challenge being edited belongs to the deck page.
+    if (els.formDialog.open && state.editingId) els.formDialog.close();
+    showView(view, { initial });
+    return;
   }
+  if (state.deckUnlocked) {
+    showView('deck', { initial });
+    return;
+  }
+  // Reached #/mazzo without the warning (reload, back and forward): ask first.
+  if (!els.spoilerDialog.open) els.spoilerDialog.showModal();
+}
+
+function openDeck() {
+  if (routeView() === 'deck') return;
+  els.spoilerDialog.showModal();
+}
+
+// Like the challenge sheet, the warning acts on submit: its 'close' event can come late.
+function onSpoilerSubmit(event) {
+  if (event.submitter?.value === 'enter') {
+    state.deckUnlocked = true;
+    // Navigate after the dialog has closed, so that its focus restore does not win over the new heading.
+    if (routeView() === 'deck') setTimeout(renderRoute, 0);
+    else location.hash = '#/mazzo';
+  } else {
+    setTimeout(leaveDeckRoute, 0);
+  }
+}
+
+/** Esc or a tap outside the warning. */
+function onSpoilerClosed() {
+  leaveDeckRoute();
+}
+
+/** Leaves #/mazzo when the warning was dismissed there, without adding a history entry. */
+function leaveDeckRoute() {
+  if (state.deckUnlocked || routeView() !== 'deck') return;
+  history.replaceState(null, '', `${location.pathname}${location.search}#/`);
+  renderRoute();
 }
 
 // Events
 
 function bindEvents() {
   document.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-action="add"], [data-open], [data-edit]');
+    const target = event.target.closest('[data-action], [data-open], [data-edit]');
     if (!target) return;
     if (target.dataset.action === 'add') openForm();
+    else if (target.dataset.action === 'deck') openDeck();
     else if (target.dataset.open) openChallenge(target.dataset.open);
     else if (target.dataset.edit) openForm(target.dataset.edit);
   });
@@ -649,9 +800,13 @@ function bindEvents() {
   els.formDiscard.addEventListener('click', onDiscard);
   els.formRestore.addEventListener('click', onRestore);
   els.formCancel.addEventListener('click', () => els.formDialog.close());
+  els.formDialog.addEventListener('close', () =>
+    restoreFocus(els.formDialog, state.editingId ? `[data-edit="${CSS.escape(state.editingId)}"]` : null),
+  );
+  els.spoilerForm.addEventListener('submit', onSpoilerSubmit);
   els.spoilerDialog.addEventListener('close', onSpoilerClosed);
   for (const dialog of [els.challengeDialog, els.spoilerDialog]) enableLightDismissFallback(dialog);
-  window.addEventListener('hashchange', renderRoute);
+  window.addEventListener('hashchange', () => renderRoute());
   window.addEventListener('online', renderSync);
   window.addEventListener('offline', renderSync);
 }
@@ -661,8 +816,14 @@ async function main() {
   buildCategoryControls();
   bindEvents();
   setupInstall();
+  try {
+    startLeaves(els.leaves, els.burst);
+  } catch (error) {
+    // Decoration only: the app works without it.
+    console.warn('Leaves not started.', error);
+  }
   window.addEventListener('load', registerServiceWorker, { once: true });
-  renderRoute();
+  renderRoute({ initial: true });
   render();
   renderSync();
   try {

@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
+    "dev:local": "node scripts/dev-server.mjs --local",
     "test": "node --test"
   },
   "engines": {

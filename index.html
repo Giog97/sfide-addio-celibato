@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f2ec" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#15121c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FAF5EB" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E130C" media="(prefers-color-scheme: dark)">
   <meta name="description" content="Estrai a sorte le sfide dell'addio al celibato e segna quelle superate, insieme a tutto il gruppo.">
   <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://www.gstatic.com/firebasejs/; object-src 'none'; base-uri 'none'">
   <title>Sfide Addio al Celibato</title>
@@ -13,10 +13,16 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-title" content="Sfide">
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Diphylleia&display=swap" crossorigin>
   <link rel="stylesheet" href="css/styles.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body data-loading>
+  <canvas class="leaves" id="leaves" aria-hidden="true"></canvas>
+  <canvas class="burst" id="burst" aria-hidden="true"></canvas>
+
   <header class="app-header">
     <div class="app-header-inner">
       <h1 class="brand">
@@ -34,8 +40,9 @@
 
   <main class="app-main">
     <div class="view" id="view-home" data-view="home">
+      <h2 class="visually-hidden" id="home-title" tabindex="-1">Estrai una sfida</h2>
       <section aria-labelledby="stats-title">
-        <h2 class="visually-hidden" id="stats-title">Riepilogo</h2>
+        <h3 class="visually-hidden" id="stats-title">Riepilogo</h3>
         <dl class="stats">
           <div class="stat" data-kind="passed"><dt>Superate</dt><dd id="stat-passed">0</dd></div>
           <div class="stat" data-kind="failed"><dt>Non superate</dt><dd id="stat-failed">0</dd></div>
@@ -47,8 +54,8 @@
       <section class="where" aria-labelledby="where-title">
         <form id="category-form">
           <fieldset>
-            <legend class="section-title" id="where-title">Dove siete?</legend>
-            <div class="tiles" id="category-tiles"></div>
+            <legend class="script-title" id="where-title">Dove siete?</legend>
+            <div class="places" id="category-tiles"></div>
           </fieldset>
         </form>
         <div class="draw" id="draw-area" hidden>
@@ -61,33 +68,33 @@
           </button>
           <div class="empty-deck" id="empty-deck" hidden>
             <p>Il mazzo <strong id="empty-deck-name"></strong> è vuoto.</p>
-            <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi una sfida</button>
+            <button type="button" class="btn btn-secondary" data-action="add" aria-haspopup="dialog"><span data-icon="plus"></span>Aggiungi una sfida</button>
           </div>
         </div>
       </section>
+    </div>
 
-      <div class="actions">
-        <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi sfida</button>
-        <a class="btn btn-secondary" href="#/mazzo"><span data-icon="cards"></span>Mazzo</a>
+    <div class="view" id="view-history" data-view="history" hidden>
+      <div class="view-head">
+        <h2 class="view-title" id="history-title" tabindex="-1">Storico</h2>
+        <p class="view-lead">Tocca una sfida per segnarla, correggere l'esito o rimetterla nel mazzo.</p>
       </div>
-
-      <section aria-labelledby="history-title">
-        <div class="section-head">
-          <h2 class="section-title" id="history-title">Storico</h2>
-          <span class="section-count" id="history-count"></span>
-        </div>
-        <ol class="list" id="history-list"></ol>
-        <p class="empty history-empty" id="history-empty">Ancora nessuna sfida estratta: scegli dove siete e pesca la prima.</p>
+      <section class="group" id="pending-section" aria-labelledby="pending-title" hidden>
+        <h3 class="group-title" id="pending-title">Da marcare <span class="group-count" id="pending-count"></span></h3>
+        <ol class="list" id="pending-list"></ol>
       </section>
+      <section class="group" id="marked-section" aria-labelledby="marked-title" hidden>
+        <h3 class="group-title" id="marked-title">Già segnate <span class="group-count" id="marked-count"></span></h3>
+        <ol class="list" id="marked-list"></ol>
+      </section>
+      <p class="empty history-empty" id="history-empty">Ancora nessuna sfida estratta: scegli dove siete e pesca la prima.</p>
     </div>
 
     <div class="view" id="view-deck" data-view="deck" hidden>
-      <a class="back-link" href="#/"><span data-icon="back"></span>Torna alle sfide</a>
       <div class="view-head">
         <h2 class="view-title" id="deck-title" tabindex="-1">Il mazzo</h2>
         <p class="view-lead">Tutte le sfide, anche quelle non ancora estratte. Tocca una sfida per modificarla.</p>
       </div>
-      <button type="button" class="btn btn-secondary" data-action="add"><span data-icon="plus"></span>Aggiungi sfida</button>
       <div class="deck-groups" id="deck-groups"></div>
       <details class="discarded" id="discarded" hidden>
         <summary>Scartate (<span id="discarded-count">0</span>)</summary>
@@ -96,24 +103,36 @@
     </div>
   </main>
 
+  <nav class="tabbar" aria-label="Sezioni">
+    <a class="tab" href="#/" data-tab="home" aria-current="page"><span data-icon="dice"></span><span class="tab-label">Estrai</span></a>
+    <a class="tab" href="#/storico" data-tab="history"><span data-icon="clock"></span><span class="tab-label">Storico</span><span class="tab-badge" id="history-badge" hidden></span></a>
+    <button type="button" class="tab tab-add" data-action="add" aria-haspopup="dialog"><span class="tab-add-icon"><span data-icon="plus"></span></span><span class="tab-label">Aggiungi</span></button>
+    <button type="button" class="tab" data-tab="deck" data-action="deck" aria-haspopup="dialog"><span data-icon="cards"></span><span class="tab-label">Mazzo</span></button>
+  </nav>
+
   <dialog class="sheet" id="challenge-dialog" aria-labelledby="challenge-title" closedby="any">
     <article class="challenge-card" id="challenge-card">
-      <div class="challenge-meta" id="challenge-meta"></div>
-      <h2 class="challenge-title" id="challenge-title" tabindex="-1" autofocus></h2>
-      <p class="challenge-text" id="challenge-text"></p>
-      <p class="challenge-needs" id="challenge-needs" hidden>
-        <span data-icon="bag"></span>
-        <span><strong>Serve:</strong> <span id="challenge-needs-text"></span></span>
-      </p>
+      <div class="challenge-photo">
+        <div class="challenge-meta" id="challenge-meta"></div>
+      </div>
+      <div class="challenge-body">
+        <h2 class="challenge-title" id="challenge-title" tabindex="-1" autofocus></h2>
+        <p class="challenge-text" id="challenge-text"></p>
+        <p class="challenge-needs" id="challenge-needs" hidden>
+          <span data-icon="bag"></span>
+          <span><strong>Serve:</strong> <span id="challenge-needs-text"></span></span>
+        </p>
+      </div>
     </article>
     <form method="dialog" class="sheet-actions" id="challenge-actions">
       <div class="result-row" id="result-row">
         <button class="btn btn-pass" value="passed"><span data-icon="check"></span>Superata</button>
         <button class="btn btn-fail" value="failed"><span data-icon="x"></span>Non superata</button>
       </div>
-      <button class="btn btn-ghost" value="putback" id="putback-button"><span data-icon="undo"></span>Rimetti nel mazzo</button>
+      <button class="btn btn-ghost" value="putback" id="putback-button"><span data-icon="undo"></span><span id="putback-label">Rimetti nel mazzo</span></button>
       <button class="btn btn-ghost" value="close" id="close-challenge-button">Decidi dopo</button>
     </form>
+    <p class="visually-hidden" id="sheet-announcer" aria-live="polite"></p>
   </dialog>
 
   <dialog class="sheet" id="form-dialog" aria-labelledby="form-title">
@@ -145,7 +164,7 @@
   </dialog>
 
   <dialog class="sheet" id="spoiler-dialog" aria-labelledby="spoiler-title" closedby="any">
-    <form method="dialog">
+    <form method="dialog" id="spoiler-form">
       <h2 class="sheet-title" id="spoiler-title">Attenzione, spoiler!</h2>
       <p class="sheet-text">Il mazzo mostra tutte le sfide, anche quelle non ancora estratte. Se sei lo sposo, chiudi subito.</p>
       <div class="sheet-actions">
