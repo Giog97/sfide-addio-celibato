@@ -43,6 +43,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Questions about the bride for the quiz challenge, all in one document. Rules cannot check
+    // every entry of a list: the app normalizes the entries it reads.
+    match /quiz/{docId} {
+      allow read: if true;
+      allow create, update: if docId == 'dolce-meta'
+        && request.resource.data.keys().hasAll(['items', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['items', 'updatedAt'])
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 60
+        && request.resource.data.updatedAt is int;
+      allow delete: if false;
+    }
+
     match /meta/{docId} {
       allow read: if true;
       allow create: if docId == 'seed'

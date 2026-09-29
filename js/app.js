@@ -22,6 +22,7 @@ import {
 } from './logic.js';
 import { icon } from './icons.js';
 import { burstLeaves, startLeaves } from './leaves.js';
+import { formatQuiz, parseQuiz } from './quiz.js';
 import { openStore } from './store/index.js';
 
 const CATEGORY_ICONS = { aereo: 'plane', strada: 'signpost', pub: 'beer' };
@@ -56,6 +57,10 @@ const state = {
   editingId: null,
   deckUnlocked: false,
   drawing: false,
+  quiz: [],
+  quizLoaded: false,
+  // The phone has not heard from the server yet: an empty quiz may just not be downloaded.
+  quizFromCache: false,
 };
 
 let store = null;
@@ -98,6 +103,19 @@ const els = {
   historyEmpty: byId('history-empty'),
   deckView: byId('view-deck'),
   deckGroups: byId('deck-groups'),
+  quiz: byId('quiz'),
+  quizCount: byId('quiz-count'),
+  quizLead: byId('quiz-lead'),
+  quizList: byId('quiz-list'),
+  quizEmpty: byId('quiz-empty'),
+  quizEdit: byId('quiz-edit'),
+  quizEditLabel: byId('quiz-edit-label'),
+  quizDialog: byId('quiz-dialog'),
+  quizForm: byId('quiz-form'),
+  quizText: byId('quiz-text'),
+  quizResult: byId('quiz-result'),
+  quizWarnings: byId('quiz-warnings'),
+  quizCancel: byId('quiz-cancel'),
   discarded: byId('discarded'),
   discardedCount: byId('discarded-count'),
   discardedList: byId('discarded-list'),
@@ -680,6 +698,96 @@ function onRestore() {
   }
 }
 
+// Quiz on the bride (deck page)
+
+const questionsLabel = (count) => (count === 1 ? '1 domanda' : `${count} domande`);
+const answersLabel = (count) => (count === 1 ? '1 risposta' : `${count} risposte`);
+
+function onQuiz(items, { fromCache = false } = {}) {
+  const changed = JSON.stringify(items) !== JSON.stringify(state.quiz);
+  state.quiz = items;
+  state.quizLoaded = true;
+  state.quizFromCache = fromCache;
+  // Rebuilding the list would close the answers someone is reading: only when the texts change.
+  if (changed) renderQuizList();
+  renderQuiz();
+}
+
+function renderQuiz() {
+  const count = state.quiz.length;
+  els.quizCount.textContent = state.quizLoaded ? String(count) : '';
+  els.quizLead.hidden = count === 0;
+  els.quizEditLabel.textContent = count > 0 ? 'Modifica le domande' : 'Incolla le domande';
+  els.quizEmpty.hidden = !state.quizLoaded || count > 0;
+  els.quizEmpty.textContent = state.quizFromCache
+    ? "Nessuna domanda su questo telefono. Se le avete già caricate, apri l'app con internet per scaricarle."
+    : "Nessuna domanda ancora: incolla l'elenco preparato per il quiz.";
+}
+
+function renderQuizList() {
+  els.quizList.replaceChildren(
+    ...state.quiz.map((item) =>
+      h(
+        'li',
+        { className: 'quiz-item' },
+        h(
+          'details',
+          {},
+          h('summary', {}, h('span', { className: 'quiz-question' }, item.question)),
+          h('p', { className: 'quiz-answer' }, h('span', { className: 'quiz-answer-label' }, 'Risposta'), item.answer || 'Nessuna risposta.'),
+        ),
+      ),
+    ),
+  );
+}
+
+/** Closes the section and every answer, so that the next visit to the deck starts clean. */
+function collapseQuiz() {
+  els.quiz.open = false;
+  for (const details of els.quizList.querySelectorAll('details[open]')) details.open = false;
+}
+
+function openQuizEditor() {
+  if (!store) return;
+  els.quizText.value = formatQuiz(state.quiz);
+  checkQuiz();
+  els.quizDialog.showModal();
+}
+
+/** Previews what saving would store, and returns the parsed questions. */
+function checkQuiz({ submitting = false } = {}) {
+  const text = els.quizText.value;
+  const { items, warnings } = parseQuiz(text);
+  let result = '';
+  if (items.length > 0) {
+    result = `${questionsLabel(items.length)}, ${answersLabel(items.filter((item) => item.answer !== '').length)}.`;
+    if (items.length < state.quiz.length) result += ` Ora ne sono salvate ${state.quiz.length}: le altre verranno tolte.`;
+  } else if (submitting || text.trim() !== '') {
+    result = 'Nessuna domanda trovata: ogni domanda deve iniziare con il suo numero, per esempio «1. ...».';
+  }
+  els.quizResult.textContent = result;
+  els.quizWarnings.replaceChildren(...warnings.map((warning) => h('li', {}, warning)));
+  return items;
+}
+
+function onQuizSubmit(event) {
+  event.preventDefault();
+  const items = checkQuiz({ submitting: true });
+  if (items.length === 0) {
+    els.quizText.focus();
+    return;
+  }
+  els.quizDialog.close();
+  try {
+    store.saveQuiz(items);
+  } catch (error) {
+    console.error(error);
+    toast('Salvataggio non riuscito: riprova.', 'error');
+    return;
+  }
+  toast(items.length === 1 ? 'Domanda salvata.' : `${items.length} domande salvate.`);
+}
+
 // Routing
 
 function routeView() {
@@ -729,8 +837,10 @@ function renderRoute({ initial = false } = {}) {
     // The warning shows every time the deck is opened again.
     state.deckUnlocked = false;
     if (els.spoilerDialog.open) els.spoilerDialog.close();
-    // A challenge being edited belongs to the deck page.
+    // A challenge being edited, the quiz editor and the answers shown belong to the deck page.
     if (els.formDialog.open && state.editingId) els.formDialog.close();
+    if (els.quizDialog.open) els.quizDialog.close();
+    collapseQuiz();
     showView(view, { initial });
     return;
   }
@@ -803,6 +913,10 @@ function bindEvents() {
   els.formDialog.addEventListener('close', () =>
     restoreFocus(els.formDialog, state.editingId ? `[data-edit="${CSS.escape(state.editingId)}"]` : null),
   );
+  els.quizEdit.addEventListener('click', openQuizEditor);
+  els.quizForm.addEventListener('submit', onQuizSubmit);
+  els.quizText.addEventListener('input', () => checkQuiz());
+  els.quizCancel.addEventListener('click', () => els.quizDialog.close());
   els.spoilerForm.addEventListener('submit', onSpoilerSubmit);
   els.spoilerDialog.addEventListener('close', onSpoilerClosed);
   for (const dialog of [els.challengeDialog, els.spoilerDialog]) enableLightDismissFallback(dialog);
@@ -822,6 +936,9 @@ async function main() {
     // Decoration only: the app works without it.
     console.warn('Leaves not started.', error);
   }
+  // Ms Madi draws only the accented letters of the titles, so a page may never ask for it:
+  // fetch it now, while online, and the service worker keeps it for the flight.
+  document.fonts?.load('1em "Ms Madi"', 'àèéìòù').catch(() => {});
   window.addEventListener('load', registerServiceWorker, { once: true });
   renderRoute({ initial: true });
   render();
@@ -852,6 +969,8 @@ async function main() {
     },
     onError: (message) => toast(message, 'error'),
   });
+  // Started with the app, not with the deck page: the phone keeps the quiz for the flight.
+  store.subscribeQuiz(onQuiz);
 }
 
 main();

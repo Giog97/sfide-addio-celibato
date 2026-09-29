@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-title" content="Sfide">
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Diphylleia&display=swap" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Diphylleia&family=Ms+Madi&display=swap" crossorigin>
   <link rel="stylesheet" href="css/styles.css">
   <script type="module" src="js/app.js"></script>
 </head>
@@ -95,6 +95,19 @@
         <h2 class="view-title" id="deck-title" tabindex="-1">Il mazzo</h2>
         <p class="view-lead">Tutte le sfide, anche quelle non ancora estratte. Tocca una sfida per modificarla.</p>
       </div>
+      <details class="quiz" id="quiz">
+        <summary class="quiz-summary">
+          <span data-icon="heart"></span>
+          <span class="quiz-title">Domande sulla dolce metà</span>
+          <span class="section-count" id="quiz-count"></span>
+        </summary>
+        <div class="quiz-body">
+          <p class="quiz-lead" id="quiz-lead" hidden>Per la sfida «Quiz sulla dolce metà»: leggi la domanda allo sposo, poi toccala per vedere la risposta.</p>
+          <ol class="quiz-list" id="quiz-list"></ol>
+          <p class="empty" id="quiz-empty" hidden></p>
+          <button type="button" class="btn btn-secondary" id="quiz-edit" aria-haspopup="dialog"><span data-icon="pencil"></span><span id="quiz-edit-label">Incolla le domande</span></button>
+        </div>
+      </details>
       <div class="deck-groups" id="deck-groups"></div>
       <details class="discarded" id="discarded" hidden>
         <summary>Scartate (<span id="discarded-count">0</span>)</summary>
@@ -163,10 +176,29 @@
     </form>
   </dialog>
 
+  <dialog class="sheet" id="quiz-dialog" aria-labelledby="quiz-dialog-title">
+    <form id="quiz-form" novalidate>
+      <h2 class="sheet-title" id="quiz-dialog-title">Domande sulla dolce metà</h2>
+      <div class="field">
+        <label for="quiz-text">Domande e risposte</label>
+        <textarea id="quiz-text" name="text" rows="12" autocomplete="off" aria-describedby="quiz-hint quiz-result"></textarea>
+        <p class="field-hint" id="quiz-hint">Le domande numerate («1. ...»), poi una riga «---» e le risposte con lo stesso numero («1- ...»).</p>
+      </div>
+      <div class="quiz-check">
+        <p id="quiz-result"></p>
+        <ul class="quiz-warnings" id="quiz-warnings"></ul>
+      </div>
+      <div class="sheet-actions">
+        <button type="submit" class="btn btn-primary">Salva le domande</button>
+        <button type="button" class="btn btn-ghost" id="quiz-cancel">Annulla</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog class="sheet" id="spoiler-dialog" aria-labelledby="spoiler-title" closedby="any">
     <form method="dialog" id="spoiler-form">
       <h2 class="sheet-title" id="spoiler-title">Attenzione, spoiler!</h2>
-      <p class="sheet-text">Il mazzo mostra tutte le sfide, anche quelle non ancora estratte. Se sei lo sposo, chiudi subito.</p>
+      <p class="sheet-text">Il mazzo mostra tutte le sfide, anche quelle non ancora estratte, e le risposte del quiz sulla dolce metà. Se sei lo sposo, chiudi subito.</p>
       <div class="sheet-actions">
         <button class="btn btn-primary" value="enter">Apri il mazzo</button>
         <button class="btn btn-ghost" value="cancel" autofocus>Annulla</button>

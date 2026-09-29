@@ -22,6 +22,13 @@ export function describeWriteError(error) {
     : describeError(error);
 }
 
+/** A rejected quiz write almost always means that the rules in the Firebase console predate the quiz. */
+export function describeQuizWriteError(error) {
+  return error?.code === 'permission-denied'
+    ? "Domande non salvate: Firestore le ha rifiutate. Pubblica il nuovo firestore.rules nella console Firebase, poi ricarica l'app."
+    : describeError(error);
+}
+
 export function isSetupError(error) {
   return SETUP_ERROR_CODES.has(error?.code);
 }

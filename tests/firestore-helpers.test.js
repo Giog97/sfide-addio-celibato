@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createSeeder,
   describeError,
+  describeQuizWriteError,
   describeWriteError,
   errorStatus,
   isSetupError,
@@ -22,6 +23,11 @@ test('describeError maps known codes and falls back to the code', () => {
 test('describeWriteError explains rejected writes as conflicts', () => {
   assert.match(describeWriteError(setupError), /un altro telefono/);
   assert.equal(describeWriteError(networkError), describeError(networkError));
+});
+
+test('describeQuizWriteError points to the rules', () => {
+  assert.match(describeQuizWriteError(setupError), /firestore\.rules/);
+  assert.equal(describeQuizWriteError(networkError), describeError(networkError));
 });
 
 test('isSetupError separates setup problems from transient failures', () => {

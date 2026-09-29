@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STORAGE_KEY, createLocalStore } from '../js/store/local-store.js';
+import { QUIZ_STORAGE_KEY, STORAGE_KEY, createLocalStore } from '../js/store/local-store.js';
 import { SEED_CHALLENGES } from '../js/seed.js';
 import { STATUS } from '../js/logic.js';
 
@@ -134,4 +134,41 @@ test('subscribers receive copies, not the internal state', () => {
   const { store } = setup();
   latest(store)[0].status = 'tampered';
   assert.equal(latest(store)[0].status, STATUS.DECK);
+});
+
+test('the quiz starts empty, and saveQuiz persists and notifies', () => {
+  const { store, storage } = setup();
+  const calls = [];
+  store.subscribeQuiz((items, meta) => calls.push({ items, meta }));
+  store.saveQuiz([{ question: 'Domanda?', answer: 'Risposta' }]);
+  assert.deepEqual(calls, [
+    { items: [], meta: { fromCache: false } },
+    { items: [{ question: 'Domanda?', answer: 'Risposta' }], meta: { fromCache: false } },
+  ]);
+  assert.deepEqual(JSON.parse(storage.getItem(QUIZ_STORAGE_KEY)), {
+    items: [{ question: 'Domanda?', answer: 'Risposta' }],
+    updatedAt: 1000,
+  });
+  let reloaded;
+  createLocalStore({ storage, now: () => 2000 }).subscribeQuiz((items) => {
+    reloaded = items;
+  });
+  assert.deepEqual(reloaded, [{ question: 'Domanda?', answer: 'Risposta' }]);
+});
+
+test('saving the quiz leaves the challenges alone', () => {
+  const { store, storage } = setup();
+  const before = storage.getItem(STORAGE_KEY);
+  store.saveQuiz([{ question: 'Domanda?', answer: '' }]);
+  assert.equal(storage.getItem(STORAGE_KEY), before);
+});
+
+test('an unreadable stored quiz starts empty', (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const { store } = setup(memoryStorage({ [QUIZ_STORAGE_KEY]: '{not json' }));
+  let items;
+  store.subscribeQuiz((value) => {
+    items = value;
+  });
+  assert.deepEqual(items, []);
 });

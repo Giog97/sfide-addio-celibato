@@ -13,8 +13,9 @@ import {
   updateDoc,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { newChallenge, normalizeChallenge } from '../logic.js';
+import { normalizeQuiz } from '../quiz.js';
 import { seedDocuments } from '../seed.js';
-import { createSeeder, describeWriteError, errorStatus, statusOf } from './firestore-helpers.js';
+import { createSeeder, describeQuizWriteError, describeWriteError, errorStatus, statusOf } from './firestore-helpers.js';
 
 export function createFirestoreStore(firebaseConfig) {
   const app = initializeApp(firebaseConfig);
@@ -24,6 +25,7 @@ export function createFirestoreStore(firebaseConfig) {
   });
   const challengesRef = collection(db, 'challenges');
   const seedRef = doc(db, 'meta', 'seed');
+  const quizRef = doc(db, 'quiz', 'dolce-meta');
   const errorHandlers = new Set();
 
   // Loads the default challenges once per project; the transaction makes concurrent first launches safe.
@@ -39,9 +41,9 @@ export function createFirestoreStore(firebaseConfig) {
     }),
   );
 
-  function reportWriteError(error) {
+  function reportWriteError(error, describe = describeWriteError) {
     console.error(error);
-    for (const handler of errorHandlers) handler(describeWriteError(error));
+    for (const handler of errorHandlers) handler(describe(error));
   }
 
   return {
@@ -87,6 +89,21 @@ export function createFirestoreStore(firebaseConfig) {
     },
     update(id, patch) {
       updateDoc(doc(challengesRef, id), patch).catch(reportWriteError);
+    },
+    // fromCache tells "no quiz yet" apart from "not downloaded on this phone yet".
+    subscribeQuiz(onChange) {
+      return onSnapshot(
+        quizRef,
+        { includeMetadataChanges: true },
+        (snapshot) => onChange(normalizeQuiz(snapshot.data()), { fromCache: snapshot.metadata.fromCache }),
+        // Setup problems already show through the challenges listener.
+        (error) => console.error(error),
+      );
+    },
+    saveQuiz(items) {
+      setDoc(quizRef, { items: normalizeQuiz({ items }), updatedAt: Date.now() }).catch((error) =>
+        reportWriteError(error, describeQuizWriteError),
+      );
     },
   };
 }
